@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Extractor Pro</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+    />
+    <style>
+      :root {
+        --primary-100: #2c3e50;
+        --primary-200: #3e5871;
+        --primary-300: #507192;
+        --accent-100: #e74c3c;
+        --background-100: #06090b;
+        --background-200: #0f171c;
+        --background-300: #18242c;
+        --text-100: #fbfcfc;
+        --text-200: #ecf1f1;
+        --text-300: #dee6e6;
+      }
+
+      body {
+        background-color: var(--background-100);
+        color: var(--text-100);
+      }
+
+      textarea::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      textarea::-webkit-scrollbar-track {
+        background: var(--background-300);
+        border-radius: 5px;
+      }
+
+      textarea::-webkit-scrollbar-thumb {
+        background: var(--primary-300);
+        border-radius: 5px;
+      }
+
+      .btn {
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .btn:hover:not(:disabled) {
+        transform: scale(1.05);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .btn-extract { background-color: var(--primary-100); }
+      .btn-copy { background-color: var(--primary-200); }
+      .btn-export { background-color: var(--primary-300); }
+      .btn-clear { background-color: var(--accent-100); }
+
+      .modern-header {
+        background: var(--background-200);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .modal-background {
+        background: rgba(0, 0, 0, 0.7);
+      }
+
+      .notification {
+        background: var(--background-300);
+        color: var(--text-100);
+      }
+      .notification.success { background: #2ecc71; }
+      .notification.error { background: var(--accent-100); }
+
+      .loading-spinner {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div id="app">
+      <!-- Notification System -->
+      <div 
+        v-if="notification.message"
+        :class="['notification fixed bottom-4 right-4 p-4 rounded-lg shadow-lg transition-all', notification.type]"
+        role="alert"
+      >
+        {{ notification.message }}
+      </div>
+
+      <!-- Header -->
+      <header class="modern-header py-4">
+        <div class="container mx-auto px-4 flex justify-between items-center">
+          <div class="flex items-center space-x-3">
+            <i class="fas fa-envelope text-2xl text-white"></i>
+            <h1 class="text-2xl font-bold">Email Extractor Pro</h1>
+          </div>
+          <button 
+            @click="openHelp" 
+            class="btn bg-blue-500 text-white px-4 py-2 rounded-lg"
+            aria-label="Open help"
+          >
+            <i class="fas fa-question-circle mr-2"></i> Help
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="container mx-auto px-4 py-8">
+        <div class="bg-background-300 shadow-lg rounded-lg p-6 max-w-3xl mx-auto">
+          <!-- Error Message -->
+          <div 
+            id="error-message"
+            class="text-red-500 hidden mb-4"
+            aria-live="polite"
+          ></div>
+
+          <!-- Input Area -->
+          <div class="mb-6">
+            <label class="block font-semibold mb-2 text-text-200">
+              Enter text containing email addresses:
+            </label>
+            <textarea
+              v-model="inputText"
+              @input="onInputUpdate"
+              placeholder="Paste your text here..."
+              class="w-full h-32 p-3 rounded focus:ring-2 focus:ring-blue-500 transition duration-300"
+              style="background-color: var(--background-200); color: var(--text-100);"
+              aria-label="Input text area"
+            ></textarea>
+          </div>
+
+          <!-- Options Section -->
+          <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block font-semibold mb-2 text-text-200">Sort by:</label>
+              <select
+                v-model="sortOption"
+                class="w-full p-2 rounded focus:ring-2 focus:ring-blue-500"
+                style="background-color: var(--background-200); color: var(--text-100);"
+                aria-label="Email sorting options"
+              >
+                <option value="none">None</option>
+                <option value="domain">Domain</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <div>
+              <div class="flex items-center mb-2">
+                <input 
+                  type="checkbox" 
+                  v-model="checkMX" 
+                  id="mxCheck"
+                  class="form-checkbox h-4 w-4 text-blue-600"
+                >
+                <label for="mxCheck" class="ml-2 text-text-200">
+                  Verify MX Records
+                </label>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  @click="extractEmails"
+                  class="btn btn-extract text-white p-2 rounded-lg relative"
+                  :disabled="isCheckingMX"
+                >
+                  <i class="fas fa-envelope mr-2"></i>
+                  <span v-if="!isCheckingMX">Extract</span>
+                  <span v-else class="inline-flex items-center">
+                    <i class="fas fa-circle-notch loading-spinner mr-2"></i> Checking MX...
+                  </span>
+                </button>
+                <button
+                  @click="clearFields"
+                  class="btn btn-clear text-white p-2 rounded-lg"
+                  aria-label="Clear fields"
+                >
+                  <i class="fas fa-trash mr-2"></i> Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Output Area -->
+          <div class="mb-6">
+            <label class="block font-semibold mb-2 text-text-200">Extracted Emails:</label>
+            <textarea
+              v-model="extractedEmails"
+              readonly
+              class="w-full h-32 p-3 rounded focus:outline-none"
+              style="background-color: var(--background-200); color: var(--text-100);"
+              aria-label="Extracted emails output"
+            ></textarea>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="grid grid-cols-2 gap-4">
+            <button
+              @click="copyEmails"
+              :disabled="!extractedEmails"
+              class="btn btn-copy text-white p-2 rounded-lg"
+              aria-label="Copy emails to clipboard"
+              aria-disabled="!extractedEmails"
+            >
+              <i class="fas fa-copy mr-2"></i> Copy
+            </button>
+            <button
+              @click="exportEmails"
+              :disabled="!extractedEmails"
+              class="btn btn-export text-white p-2 rounded-lg"
+              aria-label="Export emails"
+              aria-disabled="!extractedEmails"
+            >
+              <i class="fas fa-file-export mr-2"></i> Export
+            </button>
+          </div>
+        </div>
+
+        <!-- Help Modal -->
+        <div v-if="showHelp" class="modal-background fixed inset-0 flex items-center justify-center">
+          <div class="modal-content bg-background-300 p-6 rounded-lg max-w-md">
+            <h2 id="modal-title" class="text-2xl font-bold mb-4">How to Use</h2>
+            <p class="mb-4">
+              1. Paste text containing emails into the input box<br>
+              2. Choose sorting preference (optional)<br>
+              3. Enable MX record verification if needed<br>
+              4. Click "Extract" to find valid emails<br>
+              5. Copy or export results using the buttons
+            </p>
+            <button 
+              @click="closeHelp" 
+              class="close-button bg-accent-100 text-white px-4 py-2 rounded"
+              aria-label="Close help dialog"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <script>
+      new Vue({
+        el: "#app",
+        data: {
+          inputText: "",
+          extractedEmails: "",
+          sortOption: "none",
+          showHelp: false,
+          checkMX: false,
+          isCheckingMX: false,
+          debounceTimeout: null,
+          notification: { message: "", type: "info" }
+        },
+        methods: {
+          onInputUpdate() {
+            clearTimeout(this.debounceTimeout);
+            this.debounceTimeout = setTimeout(this.extractEmails, 500);
+          },
+          
+          async extractEmails() {
+            this.isCheckingMX = true;
+            try {
+              const emailRegex = /(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])/gi;
+              const matches = this.inputText.match(emailRegex) || [];
+              
+              let validEmails = Array.from(new Set(matches)).filter(email => {
+                const domain = email.split("@")[1];
+                return domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
+              });
+
+              if (this.checkMX) {
+                validEmails = await this.validateMXRecords(validEmails);
+              }
+
+              if (validEmails.length > 0) {
+                if (this.sortOption !== "none") {
+                  validEmails.sort((a, b) => {
+                    const partA = this.sortOption === "domain" 
+                      ? a.split("@")[1].toLowerCase() 
+                      : a.split("@")[0].toLowerCase();
+                    const partB = this.sortOption === "domain" 
+                      ? b.split("@")[1].toLowerCase() 
+                      : b.split("@")[0].toLowerCase();
+                    return partA.localeCompare(partB);
+                  });
+                }
+                this.extractedEmails = validEmails.join("\n");
+                this.showNotification(`${validEmails.length} valid emails found${this.checkMX ? ' with MX records' : ''}`, "success");
+              } else {
+                this.extractedEmails = "";
+                this.showNotification("No valid emails found" + (this.checkMX ? " with MX records" : ""), "error");
+              }
+            } catch (error) {
+              console.error("Extraction error:", error);
+              this.showNotification("Error processing emails", "error");
+            } finally {
+              this.isCheckingMX = false;
+            }
+          },
+
+          async validateMXRecords(emails) {
+            const validEmails = [];
+            for (const email of emails) {
+              const domain = email.split('@')[1];
+              try {
+                const response = await fetch(`https://dns.google/resolve?name=${domain}&type=MX`);
+                const data = await response.json();
+                
+                if (data.Answer && data.Answer.length > 0) {
+                  validEmails.push(email);
+                }
+              } catch (error) {
+                console.error(`MX check failed for ${domain}:`, error);
+                // Optionally include email even if MX check fails
+                // validEmails.push(email);
+              }
+            }
+            return validEmails;
+          },
+
+          copyEmails() {
+            navigator.clipboard.writeText(this.extractedEmails)
+              .then(() => this.showNotification("Emails copied to clipboard!", "success"));
+          },
+
+          exportEmails() {
+            const format = prompt("Choose export format:\n1. txt (default)\n2. csv", "txt");
+            const content = format?.toLowerCase() === "csv" 
+              ? this.extractedEmails.split("\n").join(",") 
+              : this.extractedEmails;
+            
+            const blob = new Blob([content], { type: `text/${format || "txt"}` });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `emails.${format || "txt"}`;
+            link.click();
+            this.showNotification(`Emails exported as ${format || "txt"}`, "success");
+          },
+
+          clearFields() {
+            if (confirm("Clear all content?")) {
+              this.inputText = "";
+              this.extractedEmails = "";
+              this.showNotification("Fields cleared", "info");
+            }
+          },
+
+          showNotification(message, type = "info") {
+            this.notification = { message, type };
+            setTimeout(() => this.notification = { message: "", type: "" }, 3000);
+          },
+
+          openHelp() { this.showHelp = true; },
+          closeHelp() { this.showHelp = false; }
+        }
+      });
+    </script>
+  </body>
+</html>
